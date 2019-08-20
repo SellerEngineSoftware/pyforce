@@ -1,6 +1,9 @@
 Changelog
 =========
 
+1.7.4 (2019-08-20)
+ A build with python3 compatibility
+
 1.7.3 (2016-08-22)
  Bugfix: initialize value of reduce in getRecordTypes
 
