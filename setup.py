@@ -2,8 +2,7 @@
 from setuptools import setup
 
 setup(name='pyforce',
-    version='1.7.3', # be sure to update the version in pyforce.py too
-    package_dir={'': 'src'},
+    version='1.7.3',
     packages=['pyforce'],
     author = "Simon Fell et al.  reluctantly Forked by idbentley",
     author_email = 'ian.bentley@gmail.com, alanjcastonguay@gmail.com',

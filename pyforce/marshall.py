@@ -1,11 +1,11 @@
-import logging
-from xmlclient import _tPartnerNS, _tSObjectNS, _tSoapNS
-import pyforce
-from types import ListType, TupleType, DictType
-import datetime
 import re
+import logging
+import datetime
 
-_logger = logging.getLogger("pyforce.{0}".format(__name__))
+from pyforce.common import bool_
+from pyforce.xmlclient import _tSObjectNS
+
+logger = logging.getLogger(__name__)
 
 dateregx = re.compile(r'(\d{4})-(\d{2})-(\d{2})')
 datetimeregx = re.compile(
@@ -34,7 +34,7 @@ def marshall(fieldtype, fieldname, xml, ns=_tSObjectNS):
 
 
 def register(fieldtypes, func):
-    if type(fieldtypes) not in (ListType, TupleType, DictType):
+    if not isinstance(fieldtypes, (list, tuple, dict)):
         fieldtypes = [fieldtypes]
     for t in fieldtypes:
         _marshallers[t] = func
@@ -51,7 +51,7 @@ def textMarshaller(fieldname, xml, ns):
     node = xml[getattr(ns, fieldname)]
     text = ''
     for x in node._dir:
-        text += unicode(x)
+        text += x
     return text.encode('utf-8')
 
 register(texttypes, textMarshaller)
@@ -67,7 +67,7 @@ register(multitypes, multiMarshaller)
 
 
 def booleanMarshaller(fieldname, xml, ns):
-    return pyforce._bool(xml[getattr(ns, fieldname)])
+    return bool_(xml[getattr(ns, fieldname)])
 
 register('boolean', booleanMarshaller)
 

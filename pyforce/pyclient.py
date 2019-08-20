@@ -1,11 +1,14 @@
-import logging
-from xmlclient import _tPartnerNS, _tSObjectNS, _tSchemaInstanceNS
-from xmlclient import Client as BaseClient
-from marshall import marshall
-from types import TupleType, ListType
 import re
 import copy
-from xmltramp import Namespace
+import logging
+from functools import reduce
+
+from pyforce.common import bool_
+from pyforce.marshall import marshall
+from pyforce.xmlclient import _tPartnerNS, _tSObjectNS, _tSchemaInstanceNS
+from pyforce.xmlclient import Client as BaseClient
+from pyforce.xmltramp import Namespace
+
 
 _tSchemaNS = Namespace('http://www.w3.org/2001/XMLSchema')
 
@@ -16,22 +19,16 @@ _logger = logging.getLogger("pyforce.{0}".format(__name__))
 
 
 class QueryRecord(dict):
-
     def __getattr__(self, n):
-        try:
-            return self[n]
-        except KeyError:
-            return dict.__getattr__(self, n)
+        return self[n]
 
     def __setattr__(self, n, v):
         self[n] = v
 
 
 class QueryRecordSet(list):
-
     def __init__(self, records, done, size, **kw):
-        for r in records:
-            self.append(r)
+        super(QueryRecordSet, self).__init__(records)
         self.done = done
         self.size = size
         for k, v in kw.items():
@@ -42,19 +39,17 @@ class QueryRecordSet(list):
         return self
 
     def __getitem__(self, n):
-        if type(n) == type(''):  # This should be a isinstance statement
-                                 # Not sure if should be None or str
-            try:
-                return getattr(self, n)
-            except AttributeError, n:
+        if isinstance(n, str):
+            attr = getattr(self, n, None)
+            if attr is None:
                 raise KeyError
-        else:
-            return list.__getitem__(self, n)
+        raise ValueError(n)
 
 
 class SObject(object):
-
     def __init__(self, **kw):
+        self.fields = {}
+
         for k, v in kw.items():
             setattr(self, k, v)
 
@@ -67,7 +62,6 @@ class SObject(object):
 
 
 class Client(BaseClient):
-
     cacheTypeDescriptions = False
 
     def __init__(self, serverUrl=None, cacheTypeDescriptions=False):
@@ -79,7 +73,7 @@ class Client(BaseClient):
     def login(self, username, passwd):
         res = BaseClient.login(self, username, passwd)
         data = dict()
-        data['passwordExpired'] = _bool(res[_tPartnerNS.passwordExpired])
+        data['passwordExpired'] = bool_(res[_tPartnerNS.passwordExpired])
         data['serverUrl'] = str(res[_tPartnerNS.serverUrl])
         data['sessionId'] = str(res[_tPartnerNS.sessionId])
         data['userId'] = str(res[_tPartnerNS.userId])
@@ -92,7 +86,7 @@ class Client(BaseClient):
 
     def isConnected(self):
         """ First pass at a method to check if we're connected or not """
-        if self.__conn and self.__conn._HTTPConnection__state == 'Idle':
+        if self.conn and self.conn._HTTPConnection__state == 'Idle':
             return True
         return False
 
@@ -104,34 +98,34 @@ class Client(BaseClient):
         sobjects = list()
         for r in res[_tPartnerNS.sobjects,]:
             d = dict()
-            d['activateable'] = _bool(r[_tPartnerNS.activateable])
-            d['createable'] = _bool(r[_tPartnerNS.createable])
-            d['custom'] = _bool(r[_tPartnerNS.custom])
+            d['activateable'] = bool_(r[_tPartnerNS.activateable])
+            d['createable'] = bool_(r[_tPartnerNS.createable])
+            d['custom'] = bool_(r[_tPartnerNS.custom])
             try:
-                d['customSetting'] = _bool(r[_tPartnerNS.customSetting])
+                d['customSetting'] = bool_(r[_tPartnerNS.customSetting])
             except KeyError:
                 pass
-            d['deletable'] = _bool(r[_tPartnerNS.deletable])
-            d['deprecatedAndHidden'] = _bool(
+            d['deletable'] = bool_(r[_tPartnerNS.deletable])
+            d['deprecatedAndHidden'] = bool_(
                 r[_tPartnerNS.deprecatedAndHidden]
             )
             try:
-                d['feedEnabled'] = _bool(r[_tPartnerNS.feedEnabled])
+                d['feedEnabled'] = bool_(r[_tPartnerNS.feedEnabled])
             except KeyError:
                 pass
             d['keyPrefix'] = str(r[_tPartnerNS.keyPrefix])
             d['label'] = str(r[_tPartnerNS.label])
             d['labelPlural'] = str(r[_tPartnerNS.labelPlural])
-            d['layoutable'] = _bool(r[_tPartnerNS.layoutable])
-            d['mergeable'] = _bool(r[_tPartnerNS.mergeable])
+            d['layoutable'] = bool_(r[_tPartnerNS.layoutable])
+            d['mergeable'] = bool_(r[_tPartnerNS.mergeable])
             d['name'] = str(r[_tPartnerNS.name])
-            d['queryable'] = _bool(r[_tPartnerNS.queryable])
-            d['replicateable'] = _bool(r[_tPartnerNS.replicateable])
-            d['retrieveable'] = _bool(r[_tPartnerNS.retrieveable])
-            d['searchable'] = _bool(r[_tPartnerNS.searchable])
-            d['triggerable'] = _bool(r[_tPartnerNS.triggerable])
-            d['undeletable'] = _bool(r[_tPartnerNS.undeletable])
-            d['updateable'] = _bool(r[_tPartnerNS.updateable])
+            d['queryable'] = bool_(r[_tPartnerNS.queryable])
+            d['replicateable'] = bool_(r[_tPartnerNS.replicateable])
+            d['retrieveable'] = bool_(r[_tPartnerNS.retrieveable])
+            d['searchable'] = bool_(r[_tPartnerNS.searchable])
+            d['triggerable'] = bool_(r[_tPartnerNS.triggerable])
+            d['undeletable'] = bool_(r[_tPartnerNS.undeletable])
+            d['updateable'] = bool_(r[_tPartnerNS.updateable])
             sobjects.append(SObject(**d))
         data['sobjects'] = sobjects
         data['types'] = [str(t) for t in res[_tPartnerNS.types,]]
@@ -142,27 +136,27 @@ class Client(BaseClient):
 
     def describeSObjects(self, sObjectTypes):
         res = BaseClient.describeSObjects(self, sObjectTypes)
-        if type(res) not in (TupleType, ListType):
+        if not isinstance(res, (tuple, list)):
             res = [res]
         data = list()
         for r in res:
             d = dict()
-            d['activateable'] = _bool(r[_tPartnerNS.activateable])
+            d['activateable'] = bool_(r[_tPartnerNS.activateable])
             rawreldata = r[_tPartnerNS.ChildRelationships,]
             relinfo = [_extractChildRelInfo(cr) for cr in rawreldata]
             d['ChildRelationships'] = relinfo
-            d['createable'] = _bool(r[_tPartnerNS.createable])
-            d['custom'] = _bool(r[_tPartnerNS.custom])
+            d['createable'] = bool_(r[_tPartnerNS.createable])
+            d['custom'] = bool_(r[_tPartnerNS.custom])
             try:
-                d['customSetting'] = _bool(r[_tPartnerNS.customSetting])
+                d['customSetting'] = bool_(r[_tPartnerNS.customSetting])
             except KeyError:
                 pass
-            d['deletable'] = _bool(r[_tPartnerNS.deletable])
-            d['deprecatedAndHidden'] = _bool(
+            d['deletable'] = bool_(r[_tPartnerNS.deletable])
+            d['deprecatedAndHidden'] = bool_(
                 r[_tPartnerNS.deprecatedAndHidden]
             )
             try:
-                d['feedEnabled'] = _bool(r[_tPartnerNS.feedEnabled])
+                d['feedEnabled'] = bool_(r[_tPartnerNS.feedEnabled])
             except KeyError:
                 pass
             fields = r[_tPartnerNS.fields,]
@@ -174,21 +168,21 @@ class Client(BaseClient):
             d['keyPrefix'] = str(r[_tPartnerNS.keyPrefix])
             d['label'] = str(r[_tPartnerNS.label])
             d['labelPlural'] = str(r[_tPartnerNS.labelPlural])
-            d['layoutable'] = _bool(r[_tPartnerNS.layoutable])
-            d['mergeable'] = _bool(r[_tPartnerNS.mergeable])
+            d['layoutable'] = bool_(r[_tPartnerNS.layoutable])
+            d['mergeable'] = bool_(r[_tPartnerNS.mergeable])
             d['name'] = str(r[_tPartnerNS.name])
-            d['queryable'] = _bool(r[_tPartnerNS.queryable])
+            d['queryable'] = bool_(r[_tPartnerNS.queryable])
             d['recordTypeInfos'] = ([_extractRecordTypeInfo(rti) for rti in
                                     r[_tPartnerNS.recordTypeInfos,]])
-            d['replicateable'] = _bool(r[_tPartnerNS.replicateable])
-            d['retrieveable'] = _bool(r[_tPartnerNS.retrieveable])
-            d['searchable'] = _bool(r[_tPartnerNS.searchable])
+            d['replicateable'] = bool_(r[_tPartnerNS.replicateable])
+            d['retrieveable'] = bool_(r[_tPartnerNS.retrieveable])
+            d['searchable'] = bool_(r[_tPartnerNS.searchable])
             try:
-                d['triggerable'] = _bool(r[_tPartnerNS.triggerable])
+                d['triggerable'] = bool_(r[_tPartnerNS.triggerable])
             except KeyError:
                 pass
-            d['undeletable'] = _bool(r[_tPartnerNS.undeletable])
-            d['updateable'] = _bool(r[_tPartnerNS.updateable])
+            d['undeletable'] = bool_(r[_tPartnerNS.undeletable])
+            d['updateable'] = bool_(r[_tPartnerNS.updateable])
             d['urlDetail'] = str(r[_tPartnerNS.urlDetail])
             d['urlEdit'] = str(r[_tPartnerNS.urlEdit])
             d['urlNew'] = str(r[_tPartnerNS.urlNew])
@@ -198,14 +192,14 @@ class Client(BaseClient):
     def create(self, sObjects):
         preparedObjects = _prepareSObjects(sObjects)
         res = BaseClient.create(self, preparedObjects)
-        if type(res) not in (TupleType, ListType):
+        if not isinstance(res, (tuple, list)):
             res = [res]
         data = list()
         for r in res:
             d = dict()
             data.append(d)
             d['id'] = str(r[_tPartnerNS.id])
-            d['success'] = success = _bool(r[_tPartnerNS.success])
+            d['success'] = success = bool_(r[_tPartnerNS.success])
             if not success:
                 d['errors'] = [_extractError(e)
                                for e in r[_tPartnerNS.errors,]]
@@ -217,13 +211,13 @@ class Client(BaseClient):
         preparedLeadConverts = _prepareSObjects(lead_converts)
         del preparedLeadConverts['fieldsToNull']
         res = BaseClient.convertLeads(self, preparedLeadConverts)
-        if type(res) not in (TupleType, ListType):
+        if not isinstance(res, (tuple, list)):
             res = [res]
         data = list()
         for resu in res:
             d = dict()
             data.append(d)
-            d['success'] = success = _bool(resu[_tPartnerNS.success])
+            d['success'] = success = bool_(resu[_tPartnerNS.success])
             if not success:
                 d['errors'] = [_extractError(e)
                                for e in resu[_tPartnerNS.errors,]]
@@ -263,13 +257,13 @@ class Client(BaseClient):
             for listitems in preparedEmails:
                 del listitems['fieldsToNull']
         res = BaseClient.sendEmail(self, preparedEmails, mass_type)
-        if type(res) not in (TupleType, ListType):
+        if not isinstance(res, (tuple, list)):
             res = [res]
         data = list()
         for resu in res:
             d = dict()
             data.append(d)
-            d['success'] = success = _bool(resu[_tPartnerNS.success])
+            d['success'] = success = bool_(resu[_tPartnerNS.success])
             if not success:
                 d['errors'] = [_extractError(e)
                                for e in resu[_tPartnerNS.errors,]]
@@ -281,7 +275,7 @@ class Client(BaseClient):
         resultSet = BaseClient.retrieve(self, fields, sObjectType, ids)
         type_data = self.describeSObjects(sObjectType)[0]
 
-        if type(resultSet) not in (TupleType, ListType):
+        if not isinstance(resultSet, (tuple, list)):
             if isnil(resultSet):
                 resultSet = list()
             else:
@@ -298,14 +292,14 @@ class Client(BaseClient):
     def update(self, sObjects):
         preparedObjects = _prepareSObjects(sObjects)
         res = BaseClient.update(self, preparedObjects)
-        if type(res) not in (TupleType, ListType):
+        if not isinstance(res, (tuple, list)):
             res = [res]
         data = list()
         for r in res:
             d = dict()
             data.append(d)
             d['id'] = str(r[_tPartnerNS.id])
-            d['success'] = success = _bool(r[_tPartnerNS.success])
+            d['success'] = success = bool_(r[_tPartnerNS.success])
             if not success:
                 d['errors'] = [_extractError(e)
                                for e in r[_tPartnerNS.errors,]]
@@ -384,7 +378,7 @@ class Client(BaseClient):
         data = QueryRecordSet(
             records=[self._extractRecord(r, typeDescs) for r in
                      res[_tPartnerNS.records,]],
-            done=_bool(res[_tPartnerNS.done]),
+            done=bool_(res[_tPartnerNS.done]),
             size=int(str(res[_tPartnerNS.size])),
             queryLocator=str(res[_tPartnerNS.queryLocator])
         )
@@ -407,7 +401,7 @@ class Client(BaseClient):
         data = QueryRecordSet(
             records=[self._extractRecord(r, typeDescs) for r in
                      res[_tPartnerNS.records,]],
-            done=_bool(res[_tPartnerNS.done]),
+            done=bool_(res[_tPartnerNS.done]),
             size=int(str(res[_tPartnerNS.size])),
             queryLocator=str(res[_tPartnerNS.queryLocator])
         )
@@ -434,14 +428,14 @@ class Client(BaseClient):
 
     def delete(self, ids):
         res = BaseClient.delete(self, ids)
-        if type(res) not in (TupleType, ListType):
+        if not isinstance(res, (tuple, list)):
             res = [res]
         data = list()
         for r in res:
             d = dict()
             data.append(d)
             d['id'] = str(r[_tPartnerNS.id])
-            d['success'] = success = _bool(r[_tPartnerNS.success])
+            d['success'] = success = bool_(r[_tPartnerNS.success])
             if not success:
                 d['errors'] = [_extractError(e)
                                for e in r[_tPartnerNS.errors,]]
@@ -452,26 +446,26 @@ class Client(BaseClient):
     def upsert(self, externalIdName, sObjects):
         preparedObjects = _prepareSObjects(sObjects)
         res = BaseClient.upsert(self, externalIdName, preparedObjects)
-        if type(res) not in (TupleType, ListType):
+        if not isinstance(res, (tuple, list)):
             res = [res]
         data = list()
         for r in res:
             d = dict()
             data.append(d)
             d['id'] = str(r[_tPartnerNS.id])
-            d['success'] = success = _bool(r[_tPartnerNS.success])
+            d['success'] = success = bool_(r[_tPartnerNS.success])
             if not success:
                 d['errors'] = [_extractError(e)
                                for e in r[_tPartnerNS.errors,]]
             else:
                 d['errors'] = list()
-            d['isCreated'] = d['created'] = _bool(r[_tPartnerNS.created])
+            d['isCreated'] = d['created'] = bool_(r[_tPartnerNS.created])
         return data
 
     def getDeleted(self, sObjectType, start, end):
         res = BaseClient.getDeleted(self, sObjectType, start, end)
         res = res[_tPartnerNS.deletedRecords,]
-        if type(res) not in (TupleType, ListType):
+        if not isinstance(res, (tuple, list)):
             res = [res]
         data = list()
         for r in res:
@@ -488,7 +482,7 @@ class Client(BaseClient):
     def getUpdated(self, sObjectType, start, end):
         res = BaseClient.getUpdated(self, sObjectType, start, end)
         res = res[_tPartnerNS.ids,]
-        if type(res) not in (TupleType, ListType):
+        if not isinstance(res, (tuple, list)):
             res = [res]
         return [str(r) for r in res]
 
@@ -505,7 +499,7 @@ class Client(BaseClient):
             d = dict(
                 label=str(r[_tPartnerNS.label]),
                 logoUrl=str(r[_tPartnerNS.logoUrl]),
-                selected=_bool(r[_tPartnerNS.selected]),
+                selected=bool_(r[_tPartnerNS.selected]),
                 tabs=tabs
             )
             data.append(d)
@@ -518,6 +512,9 @@ class Client(BaseClient):
 class Field(object):
 
     def __init__(self, **kw):
+        self.type = None
+        self.name = None
+
         for key, value in kw.items():
             setattr(self, key, value)
 
@@ -572,40 +569,36 @@ def _prepareSObjects(sObjects):
     return sObjectsCopy
 
 
-def _bool(val):
-    return str(val) == 'true'
-
-
 def _extractFieldInfo(fdata):
     data = dict()
-    data['autoNumber'] = _bool(fdata[_tPartnerNS.autoNumber])
+    data['autoNumber'] = bool_(fdata[_tPartnerNS.autoNumber])
     data['byteLength'] = int(str(fdata[_tPartnerNS.byteLength]))
-    data['calculated'] = _bool(fdata[_tPartnerNS.calculated])
-    data['createable'] = _bool(fdata[_tPartnerNS.createable])
-    data['nillable'] = _bool(fdata[_tPartnerNS.nillable])
-    data['custom'] = _bool(fdata[_tPartnerNS.custom])
-    data['defaultedOnCreate'] = _bool(fdata[_tPartnerNS.defaultedOnCreate])
+    data['calculated'] = bool_(fdata[_tPartnerNS.calculated])
+    data['createable'] = bool_(fdata[_tPartnerNS.createable])
+    data['nillable'] = bool_(fdata[_tPartnerNS.nillable])
+    data['custom'] = bool_(fdata[_tPartnerNS.custom])
+    data['defaultedOnCreate'] = bool_(fdata[_tPartnerNS.defaultedOnCreate])
     data['digits'] = int(str(fdata[_tPartnerNS.digits]))
-    data['filterable'] = _bool(fdata[_tPartnerNS.filterable])
+    data['filterable'] = bool_(fdata[_tPartnerNS.filterable])
     try:
-        data['htmlFormatted'] = _bool(fdata[_tPartnerNS.htmlFormatted])
+        data['htmlFormatted'] = bool_(fdata[_tPartnerNS.htmlFormatted])
     except KeyError:
         data['htmlFormatted'] = False
     data['label'] = str(fdata[_tPartnerNS.label])
     data['length'] = int(str(fdata[_tPartnerNS.length]))
     data['name'] = str(fdata[_tPartnerNS.name])
-    data['nameField'] = _bool(fdata[_tPartnerNS.nameField])
+    data['nameField'] = bool_(fdata[_tPartnerNS.nameField])
     plValues = fdata[_tPartnerNS.picklistValues,]
     data['picklistValues'] = [_extractPicklistEntry(p) for p in plValues]
     data['precision'] = int(str(fdata[_tPartnerNS.precision]))
     data['referenceTo'] = [str(r) for r in fdata[_tPartnerNS.referenceTo,]]
-    data['restrictedPicklist'] = _bool(fdata[_tPartnerNS.restrictedPicklist])
+    data['restrictedPicklist'] = bool_(fdata[_tPartnerNS.restrictedPicklist])
     data['scale'] = int(str(fdata[_tPartnerNS.scale]))
     data['soapType'] = str(fdata[_tPartnerNS.soapType])
     data['type'] = str(fdata[_tPartnerNS.type])
-    data['updateable'] = _bool(fdata[_tPartnerNS.updateable])
+    data['updateable'] = bool_(fdata[_tPartnerNS.updateable])
     try:
-        data['dependentPicklist'] = _bool(fdata[_tPartnerNS.dependentPicklist])
+        data['dependentPicklist'] = bool_(fdata[_tPartnerNS.dependentPicklist])
         data['controllerName'] = str(fdata[_tPartnerNS.controllerName])
     except KeyError:
         data['dependentPicklist'] = False
@@ -615,9 +608,9 @@ def _extractFieldInfo(fdata):
 
 def _extractPicklistEntry(pldata):
     data = dict()
-    data['active'] = _bool(pldata[_tPartnerNS.active])
+    data['active'] = bool_(pldata[_tPartnerNS.active])
     data['validFor'] = [str(v) for v in pldata[_tPartnerNS.validFor,]]
-    data['defaultValue'] = _bool(pldata[_tPartnerNS.defaultValue])
+    data['defaultValue'] = bool_(pldata[_tPartnerNS.defaultValue])
     data['label'] = str(pldata[_tPartnerNS.label])
     data['value'] = str(pldata[_tPartnerNS.value])
     return data
@@ -625,7 +618,7 @@ def _extractPicklistEntry(pldata):
 
 def _extractChildRelInfo(crdata):
     data = dict()
-    data['cascadeDelete'] = _bool(crdata[_tPartnerNS.cascadeDelete])
+    data['cascadeDelete'] = bool_(crdata[_tPartnerNS.cascadeDelete])
     data['childSObject'] = str(crdata[_tPartnerNS.childSObject])
     data['field'] = str(crdata[_tPartnerNS.field])
     return data
@@ -633,8 +626,8 @@ def _extractChildRelInfo(crdata):
 
 def _extractRecordTypeInfo(rtidata):
     data = dict()
-    data['available'] = _bool(rtidata[_tPartnerNS.available])
-    data['defaultRecordTypeMapping'] = _bool(
+    data['available'] = bool_(rtidata[_tPartnerNS.available])
+    data['defaultRecordTypeMapping'] = bool_(
         rtidata[_tPartnerNS.defaultRecordTypeMapping]
     )
     data['name'] = str(rtidata[_tPartnerNS.name])
@@ -652,7 +645,7 @@ def _extractError(edata):
 
 def _extractTab(tdata):
     data = dict(
-        custom=_bool(tdata[_tPartnerNS.custom]),
+        custom=bool_(tdata[_tPartnerNS.custom]),
         label=str(tdata[_tPartnerNS.label]),
         sObjectName=str(tdata[_tPartnerNS.sobjectName]),
         url=str(tdata[_tPartnerNS.url]))
@@ -661,10 +654,10 @@ def _extractTab(tdata):
 
 def _extractUserInfo(res):
     data = dict(
-        accessibilityMode=_bool(res[_tPartnerNS.accessibilityMode]),
+        accessibilityMode=bool_(res[_tPartnerNS.accessibilityMode]),
         currencySymbol=str(res[_tPartnerNS.currencySymbol]),
         organizationId=str(res[_tPartnerNS.organizationId]),
-        organizationMultiCurrency=_bool(
+        organizationMultiCurrency=bool_(
             res[_tPartnerNS.organizationMultiCurrency]
         ),
         organizationName=str(res[_tPartnerNS.organizationName]),
@@ -683,30 +676,21 @@ def _extractUserInfo(res):
 
 def isObject(xml):
     try:
-        if xml(_tSchemaInstanceNS.type) == 'sf:sObject':
-            return True
-        else:
-            return False
+        return xml(_tSchemaInstanceNS.type) == 'sf:sObject'
     except KeyError:
         return False
 
 
 def isQueryResult(xml):
     try:
-        if xml(_tSchemaInstanceNS.type) == 'QueryResult':
-            return True
-        else:
-            return False
+        return xml(_tSchemaInstanceNS.type) == 'QueryResult'
     except KeyError:
         return False
 
 
 def isnil(xml):
     try:
-        if xml(_tSchemaInstanceNS.nil) == 'true':
-            return True
-        else:
-            return False
+        return xml(_tSchemaInstanceNS.nil) == 'true'
     except KeyError:
         return False
 
